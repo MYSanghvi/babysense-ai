@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 const EVENTS = [
   { type: "feed",   emoji: "🍼", label: "Feed",   color: "#FF6B6B", glow: "#FF6B6B" },
@@ -7,21 +7,15 @@ const EVENTS = [
   { type: "cry",    emoji: "😢", label: "Cry",    color: "#6BCB77", glow: "#6BCB77" },
 ];
 
+const STORAGE_KEY = "babysense_log";
+const API_KEY = import.meta.env.VITE_GEMINI_KEY;
+
 function timeAgo(date) {
   const mins = Math.floor((Date.now() - date) / 60000);
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;
   return `${Math.floor(mins / 60)}h ${mins % 60}m ago`;
 }
-
-const PREDICTIONS = {
-  feed:   "🍼 Fed recently — watch for sleepiness in 20–40 min",
-  sleep:  "💤 Just woke up — a feed is likely needed soon",
-  diaper: "💧 Fresh diaper — baby should be comfortable for a while",
-  cry:    "😢 Crying logged — check feed & diaper if it continues",
-};
-
-const STORAGE_KEY = "babysense_log";
 
 function loadLog() {
   try {
@@ -30,11 +24,45 @@ function loadLog() {
   } catch { return []; }
 }
 
+async function getAIPrediction(log) {
+  if (!API_KEY) return "⚠️ API key not set — check Vercel environment variables.";
+  if (log.length < 2) return "Log a few more events and I'll start predicting patterns 🔍";
+
+  const summary = log.slice(0, 15).map(e => {
+    const mins = Math.floor((Date.now() - e.time) / 60000);
+    return `${e.label} (${mins} min ago)`;
+  }).join(", ");
+
+  const prompt = `You are a smart baby care assistant. A mother has logged these recent baby events (most recent first): ${summary}.
+
+Based on these patterns, predict what the baby likely needs next and approximately when. Be warm, specific, and concise — max 2 sentences. Start directly with the prediction, no intro phrases like "Based on the data".`;
+
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens: 100, temperature: 0.7 },
+        }),
+      }
+    );
+    const data = await res.json();
+    return data?.candidates?.[0]?.content?.parts?.[0]?.text || "Analyzing patterns... tap more events to improve predictions.";
+  } catch {
+    return "Couldn't reach AI right now — check your connection.";
+  }
+}
+
 export default function App() {
   const [log, setLog] = useState(() => loadLog());
   const [flash, setFlash] = useState(null);
   const [newItem, setNewItem] = useState(null);
   const [saved, setSaved] = useState(false);
+  const [prediction, setPrediction] = useState("Tap a button below to start tracking 👇");
+  const [aiLoading, setAiLoading] = useState(false);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(log));
@@ -44,27 +72,37 @@ export default function App() {
     }
   }, [log]);
 
+  const refreshPrediction = useCallback(async (currentLog) => {
+    setAiLoading(true);
+    const result = await getAIPrediction(currentLog);
+    setPrediction(result);
+    setAiLoading(false);
+  }, []);
+
   function handleTap(event) {
     const entry = { ...event, time: Date.now(), id: Date.now() };
-    setLog(prev => [entry, ...prev.slice(0, 19)]);
+    const newLog = [entry, ...log.slice(0, 19)];
+    setLog(newLog);
     setFlash(event.type);
     setNewItem(entry.id);
     setTimeout(() => setFlash(null), 600);
     setTimeout(() => setNewItem(null), 800);
+    refreshPrediction(newLog);
   }
 
   function clearLog() {
     if (window.confirm("Clear all events?")) {
       setLog([]);
       localStorage.removeItem(STORAGE_KEY);
+      setPrediction("Tap a button below to start tracking 👇");
     }
   }
 
   const last = log[0];
-  const prediction = last ? PREDICTIONS[last.type] : "Tap a button below to start tracking 👇";
 
   return (
     <div style={styles.wrapper}>
+
       <div style={styles.header}>
         <div style={styles.logoRow}>
           <span style={styles.logo}>🌙 BabySense AI</span>
@@ -75,8 +113,16 @@ export default function App() {
       </div>
 
       <div style={styles.card}>
-        <div style={styles.cardLabel}>✨ AI Prediction</div>
-        <div style={styles.cardText}>{prediction}</div>
+        <div style={styles.cardLabel}>
+          {aiLoading ? "🤖 AI is thinking..." : "✨ AI Prediction"}
+        </div>
+        <div style={{
+          ...styles.cardText,
+          opacity: aiLoading ? 0.4 : 1,
+          transition: "opacity 0.3s ease"
+        }}>
+          {prediction}
+        </div>
         {last && (
           <div style={styles.cardSince}>
             Last event: <strong>{last.label}</strong> · {timeAgo(last.time)}
@@ -120,6 +166,7 @@ export default function App() {
           </div>
         ))}
       </div>
+
       <div style={styles.footer}>made with 💙 for tired parents</div>
     </div>
   );

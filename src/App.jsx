@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 const EVENTS = [
   { type: "feed",   emoji: "🍼", label: "Feed",   color: "#FF6B6B", glow: "#FF6B6B" },
@@ -79,6 +79,8 @@ export default function App() {
     setAiLoading(false);
   }, []);
 
+  const aiTimer = useRef(null);
+
   function handleTap(event) {
     const entry = { ...event, time: Date.now(), id: Date.now() };
     const newLog = [entry, ...log.slice(0, 19)];
@@ -87,8 +89,12 @@ export default function App() {
     setNewItem(entry.id);
     setTimeout(() => setFlash(null), 600);
     setTimeout(() => setNewItem(null), 800);
-    refreshPrediction(newLog);
+
+    // Wait 2 seconds after last tap before calling AI
+    if (aiTimer.current) clearTimeout(aiTimer.current);
+    aiTimer.current = setTimeout(() => refreshPrediction(newLog), 2000);
   }
+
 
   function clearLog() {
     if (window.confirm("Clear all events?")) {

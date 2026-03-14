@@ -809,6 +809,7 @@ function TabBar({ tab, setTab, t }) {
 
 // ─── Root ─────────────────────────────────────────────────────────────
 export default function App() {
+  const [authed, setAuthed] = useState(() => sessionStorage.getItem("bs_auth") === "1");
   const [log, setLog]               = useState(() => loadLog());
   const [profile, setProfile]       = useState(() => loadProfile());
   const [tab, setTab]               = useState("home");
@@ -819,6 +820,8 @@ export default function App() {
   const [toast, setToast]           = useState({ visible: false, message: "" });
   const aiTimer = useRef(null);
   const t = getTheme(darkMode, profile.gender);
+
+  if (!authed) return <AuthScreen t={t} onUnlock={() => setAuthed(true)} />;
 
   useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(log)); }, [log]);
   useEffect(() => {

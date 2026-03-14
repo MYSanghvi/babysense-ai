@@ -612,9 +612,93 @@ function HomeScreen({ log, prediction, aiLoading, t, setActiveModal, onSaveEntry
   );
 }
 
+
+// ─── Edit Entry Modal ─────────────────────────────────────────────────
+function EditEntryModal({ entry, t, onSave, onDelete, onClose }) {
+  const ev = EVENT_TYPES.find(e => e.type === entry.type);
+  const toLocalDT = (ts) => {
+    if (!ts) return "";
+    const d = new Date(ts);
+    const pad = n => String(n).padStart(2,"0");
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  const [startVal,    setStartVal]    = useState(toLocalDT(entry.startTime));
+  const [durationVal, setDurationVal] = useState(entry.duration ? String(Math.floor(entry.duration/60)) : "");
+  const [diaperType,  setDiaperType]  = useState(entry.diaperType || null);
+  const [side,        setSide]        = useState(entry.side || null);
+  const [note,        setNote]        = useState(entry.note || "");
+
+  function handleSave() {
+    const updated = {
+      ...entry,
+      startTime:  startVal ? new Date(startVal).getTime() : entry.startTime,
+      duration:   durationVal ? parseInt(durationVal) * 60 : null,
+      diaperType: diaperType,
+      side:       side,
+      note:       note,
+    };
+    onSave(updated);
+  }
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"#00000088", zIndex:200, display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
+      <div style={{ background:t.bg2, borderRadius:"24px 24px 0 0", padding:"24px 20px 40px", width:"100%", maxWidth:420, maxHeight:"85vh", overflowY:"auto" }}>
+        <div style={{ fontSize:17, fontWeight:"700", marginBottom:20, color:t.text, display:"flex", alignItems:"center", gap:10 }}>
+          <i className={ev?.icon} style={{ color:ev?.streak }} />Edit {entry.label}
+        </div>
+
+        <div style={{ fontSize:12, color:t.textMuted, fontWeight:"600", marginBottom:8, textTransform:"uppercase", letterSpacing:1 }}>Date & Time</div>
+        <input type="datetime-local" value={startVal} onChange={e => setStartVal(e.target.value)}
+          style={{ width:"100%", background:t.bg3, border:`1px solid ${t.border}`, borderRadius:12, padding:"12px 14px", color:t.text, fontSize:14, fontFamily:"'Poppins', sans-serif", boxSizing:"border-box", marginBottom:16 }} />
+
+        <div style={{ fontSize:12, color:t.textMuted, fontWeight:"600", marginBottom:8, textTransform:"uppercase", letterSpacing:1 }}>Duration (minutes)</div>
+        <input type="number" value={durationVal} onChange={e => setDurationVal(e.target.value)} placeholder="e.g. 15"
+          style={{ width:"100%", background:t.bg3, border:`1px solid ${t.border}`, borderRadius:12, padding:"12px 14px", color:t.text, fontSize:14, fontFamily:"'Poppins', sans-serif", boxSizing:"border-box", marginBottom:16 }} />
+
+        {entry.type === "diaper" && (
+          <>
+            <div style={{ fontSize:12, color:t.textMuted, fontWeight:"600", marginBottom:8, textTransform:"uppercase", letterSpacing:1 }}>Diaper Type</div>
+            <div style={{ display:"flex", gap:8, marginBottom:16 }}>
+              {["Wet","Dirty","Both"].map(tp => (
+                <button key={tp} onClick={() => setDiaperType(tp)} style={{ flex:1, padding:"10px", borderRadius:12, border:`2px solid ${diaperType===tp ? ev?.streak : t.border}`, background:diaperType===tp ? `${ev?.streak}18` : t.bg3, color:diaperType===tp ? ev?.streak : t.textMuted, fontWeight:"600", fontSize:13, cursor:"pointer", fontFamily:"'Poppins', sans-serif" }}>{tp}</button>
+              ))}
+            </div>
+          </>
+        )}
+
+        {entry.type === "feed" && (
+          <>
+            <div style={{ fontSize:12, color:t.textMuted, fontWeight:"600", marginBottom:8, textTransform:"uppercase", letterSpacing:1 }}>Side</div>
+            <div style={{ display:"flex", gap:8, marginBottom:16 }}>
+              {["Left","Right","Both","Bottle"].map(s => (
+                <button key={s} onClick={() => setSide(s)} style={{ flex:1, padding:"10px 4px", borderRadius:12, border:`2px solid ${side===s ? ev?.streak : t.border}`, background:side===s ? `${ev?.streak}18` : t.bg3, color:side===s ? ev?.streak : t.textMuted, fontWeight:"600", fontSize:12, cursor:"pointer", fontFamily:"'Poppins', sans-serif" }}>{s}</button>
+              ))}
+            </div>
+          </>
+        )}
+
+        <div style={{ fontSize:12, color:t.textMuted, fontWeight:"600", marginBottom:8, textTransform:"uppercase", letterSpacing:1 }}>Note</div>
+        <input value={note} onChange={e => setNote(e.target.value)} placeholder="Any observations..."
+          style={{ width:"100%", background:t.bg3, border:`1px solid ${t.border}`, borderRadius:12, padding:"12px 14px", color:t.text, fontSize:14, fontFamily:"'Poppins', sans-serif", boxSizing:"border-box", marginBottom:20 }} />
+
+        <div style={{ display:"flex", gap:10 }}>
+          <button onClick={() => onDelete(entry.id)} style={{ flex:1, padding:"14px", borderRadius:14, border:`1px solid #FF6B6B`, background:"#FF6B6B18", color:"#FF6B6B", fontWeight:"700", fontSize:14, cursor:"pointer", fontFamily:"'Poppins', sans-serif" }}>
+            <i className="fa-solid fa-trash" style={{ marginRight:6 }} />Delete
+          </button>
+          <button onClick={onClose} style={{ flex:1, padding:"14px", borderRadius:14, border:`1px solid ${t.border}`, background:t.bg3, color:t.textMuted, fontWeight:"600", fontSize:14, cursor:"pointer", fontFamily:"'Poppins', sans-serif" }}>Cancel</button>
+          <button onClick={handleSave} style={{ flex:2, padding:"14px", borderRadius:14, border:"none", background:ev?.streak || t.accent, color:"#1a1a2e", fontWeight:"700", fontSize:14, cursor:"pointer", fontFamily:"'Poppins', sans-serif" }}>Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Stats Screen ─────────────────────────────────────────────────────
 function StatsScreen({ log, setLog, t, showToast }) {
-  const [filter, setFilter] = useState("today");
+  const [filter,     setFilter]     = useState("today");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo,   setCustomTo]   = useState("");
+  const [editEntry,  setEditEntry]  = useState(null);
   const fileInputRef = useRef(null);
 
   const now      = Date.now();
@@ -623,6 +707,11 @@ function StatsScreen({ log, setLog, t, showToast }) {
     if (filter === "today")  return e.startTime >= today.getTime();
     if (filter === "7days")  return e.startTime >= now - 7  * 86400000;
     if (filter === "30days") return e.startTime >= now - 30 * 86400000;
+    if (filter === "custom") {
+      const from = customFrom ? new Date(customFrom).getTime() : 0;
+      const to   = customTo   ? new Date(customTo).getTime() + 86399999 : now;
+      return e.startTime >= from && e.startTime <= to;
+    }
     return true;
   });
 
@@ -645,6 +734,23 @@ function StatsScreen({ log, setLog, t, showToast }) {
     e.target.value = "";
   }
 
+  function handleSaveEdit(updated) {
+    const newLog = log.map(e => e.id === updated.id ? updated : e);
+    setLog(newLog);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(newLog));
+    setEditEntry(null);
+    showToast("Entry updated!");
+  }
+
+  function handleDeleteEntry(id) {
+    if (!window.confirm("Delete this entry?")) return;
+    const newLog = log.filter(e => e.id !== id);
+    setLog(newLog);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(newLog));
+    setEditEntry(null);
+    showToast("Entry deleted!");
+  }
+
   const filterBtn = (v, l) => (
     <button key={v} onClick={() => setFilter(v)} style={{ padding: "8px 14px", borderRadius: 20, border: `1px solid ${filter === v ? t.accent : t.border}`, background: filter === v ? `${t.accent}18` : t.bg3, color: filter === v ? t.accent : t.textMuted, fontWeight: "600", fontSize: 12, cursor: "pointer", fontFamily: "'Poppins', sans-serif", whiteSpace: "nowrap" }}>{l}</button>
   );
@@ -655,8 +761,17 @@ function StatsScreen({ log, setLog, t, showToast }) {
 
       {/* Filter Bar */}
       <div style={{ display: "flex", gap: 8, overflowX: "auto", marginBottom: 20, paddingBottom: 4 }}>
-        {filterBtn("today","Today")}{filterBtn("7days","7 Days")}{filterBtn("30days","30 Days")}{filterBtn("all","All Time")}
+        {filterBtn("today","Today")}{filterBtn("7days","7 Days")}{filterBtn("30days","30 Days")}{filterBtn("custom","Custom")}
       </div>
+      {filter === "custom" && (
+        <div style={{ display: "flex", gap: 10, marginBottom: 16, alignItems: "center" }}>
+          <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+            style={{ flex: 1, background: t.bg3, border: `1px solid ${t.border}`, borderRadius: 12, padding: "10px 12px", color: t.text, fontSize: 13, fontFamily: "'Poppins', sans-serif" }} />
+          <span style={{ color: t.textMuted, fontSize: 13 }}>to</span>
+          <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+            style={{ flex: 1, background: t.bg3, border: `1px solid ${t.border}`, borderRadius: 12, padding: "10px 12px", color: t.text, fontSize: 13, fontFamily: "'Poppins', sans-serif" }} />
+        </div>
+      )}
 
       {/* Summary Cards */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 24 }}>
@@ -690,7 +805,7 @@ function StatsScreen({ log, setLog, t, showToast }) {
           {filtered.map((item, i) => {
             const ev = EVENT_TYPES.find(e => e.type === item.type);
             return (
-              <div key={item.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: i < filtered.length - 1 ? `1px solid ${t.border}` : "none" }}>
+              <div key={item.id} onClick={() => setEditEntry(item)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: i < filtered.length - 1 ? `1px solid ${t.border}` : "none", cursor: "pointer" }}>
                 <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <i className={ev?.icon} style={{ fontSize: 16, color: ev?.streak, width: 20 }} />
                   <span style={{ fontSize: 14, fontWeight: "600", color: t.text }}>
@@ -708,6 +823,15 @@ function StatsScreen({ log, setLog, t, showToast }) {
         </div>
       )}
     </div>
+      {editEntry && (
+        <EditEntryModal
+          entry={editEntry}
+          t={t}
+          onSave={handleSaveEdit}
+          onDelete={handleDeleteEntry}
+          onClose={() => setEditEntry(null)}
+        />
+      )}
   );
 }
 
@@ -858,6 +982,8 @@ export default function App() {
 
   const ageText  = getAge(profile.dob, profile.ageFormat || "Weeks");
   const activeEv = EVENT_TYPES.find(e => e.type === activeModal);
+
+  if (!authed) return <AuthScreen t={t} onUnlock={() => setAuthed(true)} />;
 
   return (
     <div style={{ minHeight: "100vh", background: t.bg, color: t.text, fontFamily: "'Poppins', sans-serif", maxWidth: 420, margin: "0 auto" }}>

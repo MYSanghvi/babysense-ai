@@ -1,13 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 
 // ─── Constants ────────────────────────────────────────────────────────
-const STORAGE_KEY  = "babysense_log";
-const PROFILE_KEY  = "babysense_profile";
-const CHAT_KEY     = "babysense_chat";
-const API_KEY      = import.meta.env.VITE_GEMINI_KEY;
+const STORAGE_KEY    = "babysense_log";
+const PROFILE_KEY    = "babysense_profile";
+const CHAT_KEY       = "babysense_chat";
+const API_KEY        = import.meta.env.VITE_GEMINI_KEY;
 const APP_PASSPHRASE = "demo";
 const SHEETS_URL     = "https://script.google.com/macros/s/AKfycbyJOeP33r2Z-2dlvFmh8kKeUgd_F57YM7UYUKcR7BLp4I3rBW6pcYSfHjxmuW7FKf3n/exec";
-
 
 const EVENT_TYPES = [
   { type: "feed",      label: "Feed",       icon: "fa-solid fa-bottle-droplet", streak: "#FF6B6B" },
@@ -56,27 +55,22 @@ function getAge(dob, format) {
 }
 
 function isNightTime() { const h = new Date().getHours(); return h >= 21 || h < 6; }
-function loadLog() {
-  try {
-    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (stored && stored.length > 0) return stored;
-    // Pre-populate with realistic seed data on first load
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(SEED_DATA));
-    return SEED_DATA;
-  } catch { return SEED_DATA; }
-}
+
+// ✅ FIX 1: Removed SEED_DATA reference
+function loadLog()     { try { const s = JSON.parse(localStorage.getItem(STORAGE_KEY)); return (s && s.length > 0) ? s : []; } catch { return []; } }
 function loadProfile() { try { return JSON.parse(localStorage.getItem(PROFILE_KEY)) || {}; } catch { return {}; } }
 function loadChat()    { try { return JSON.parse(localStorage.getItem(CHAT_KEY))     || []; } catch { return []; } }
 
 // ─── CSV ──────────────────────────────────────────────────────────────
+// ✅ FIX: Removed "type" (same as label) and "id" (not required). Fixed header casing. Added Feeding Type + Nursing Side.
 function exportCSV(log) {
-  const headers = ["date","time","type","label","duration","diaperType","side","note"];
-  const rows    = log.map(e => {
-    const d = new Date(e.startTime);
+  const headers = ["Date", "Time", "Label", "Duration", "Diaper Type", "Feeding Type", "Nursing Side", "Note"];
+  const rows = log.map(e => {
+    const d    = new Date(e.startTime);
     const date = d.toLocaleDateString("en-IN", { day: "2-digit", month: "2-digit", year: "numeric" });
     const time = d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
     const dur  = e.duration ? formatDuration(e.duration) : "";
-    const vals = [date, time, e.type ?? "", e.label ?? "", dur, e.diaperType ?? "", e.side ?? "", e.note ?? ""];
+    const vals = [date, time, e.label ?? "", dur, e.diaperType ?? "", e.feedingType ?? "", e.side ?? "", e.note ?? ""];
     return vals.map(v => typeof v === "string" && v.includes(",") ? `"${v}"` : v).join(",");
   });
   const csv  = [headers.join(","), ...rows].join("\n");
@@ -87,14 +81,14 @@ function exportCSV(log) {
 }
 
 function parseCSV(text) {
-  const lines = text.trim().split("\n");
+  const lines   = text.trim().split("\n");
   const headers = lines[0].split(",");
   return lines.slice(1).map(line => {
     const vals = line.split(",");
     const obj  = {};
     headers.forEach((h, i) => {
       const v = vals[i]?.replace(/^"|"$/g, "") ?? "";
-      obj[h]  = h === "startTime" || h === "duration" || h === "id" ? (Number(v) || null) : v || null;
+      obj[h]  = h === "startTime" || h === "duration" ? (Number(v) || null) : v || null;
     });
     return obj;
   });
@@ -124,21 +118,20 @@ function getTheme(dark, gender) {
   };
 }
 
-
 // ─── Auth Screen ──────────────────────────────────────────────────────
+// ✅ FIX 3: Added show/hide password toggle
 function AuthScreen({ t, onUnlock }) {
-  const [input,  setInput]  = useState("");
-  const [error,  setError]  = useState(false);
-  const [shake,  setShake]  = useState(false);
+  const [input,    setInput]    = useState("");
+  const [showPass, setShowPass] = useState(false);
+  const [error,    setError]    = useState(false);
+  const [shake,    setShake]    = useState(false);
 
   function handleSubmit() {
     if (input === APP_PASSPHRASE) {
       sessionStorage.setItem("bs_auth", "1");
       onUnlock();
     } else {
-      setError(true);
-      setShake(true);
-      setInput("");
+      setError(true); setShake(true); setInput("");
       setTimeout(() => setShake(false), 500);
     }
   }
@@ -148,7 +141,6 @@ function AuthScreen({ t, onUnlock }) {
       <div style={{
         background: t.card, borderRadius: 28, padding: "40px 28px", width: "100%", maxWidth: 360,
         boxShadow: `0 8px 40px ${t.shadow}`, border: `1px solid ${t.border}`,
-        transform: shake ? "translateX(0)" : "none",
         animation: shake ? "shake 0.4s ease" : "none",
       }}>
         <div style={{ textAlign: "center", marginBottom: 32 }}>
@@ -156,24 +148,33 @@ function AuthScreen({ t, onUnlock }) {
           <div style={{ fontSize: 22, fontWeight: "800", color: t.text, fontFamily: "'Poppins', sans-serif" }}>BabySense</div>
           <div style={{ fontSize: 13, color: t.textMuted, marginTop: 6 }}><p>Enter your passphrase to continue. Use <em>demo</em> to try.</p></div>
         </div>
-        <input
-          type="password"
-          value={input}
-          onChange={e => { setInput(e.target.value); setError(false); }}
-          onKeyDown={e => e.key === "Enter" && handleSubmit()}
-          placeholder="Passphrase"
-          autoFocus
-          style={{
-            width: "100%", padding: "14px 16px", borderRadius: 14, fontSize: 15,
-            border: `2px solid ${error ? "#FF6B6B" : t.border}`,
-            background: t.bg3, color: t.text, fontFamily: "'Poppins', sans-serif",
-            boxSizing: "border-box", marginBottom: 8, outline: "none",
-            transition: "border 0.2s",
-          }}
-        />
-        {error && <div style={{ color: "#FF6B6B", fontSize: 12, fontWeight: "600", marginBottom: 12, textAlign: "center" }}>
-          <i className="fa-solid fa-circle-exclamation" style={{ marginRight: 6 }} />Incorrect passphrase. Try again.
-        </div>}
+        <div style={{ position: "relative", marginBottom: 8 }}>
+          <input
+            type={showPass ? "text" : "password"}
+            value={input}
+            onChange={e => { setInput(e.target.value); setError(false); }}
+            onKeyDown={e => e.key === "Enter" && handleSubmit()}
+            placeholder="Passphrase"
+            autoFocus
+            style={{
+              width: "100%", padding: "14px 48px 14px 16px", borderRadius: 14, fontSize: 15,
+              border: `2px solid ${error ? "#FF6B6B" : t.border}`,
+              background: t.bg3, color: t.text, fontFamily: "'Poppins', sans-serif",
+              boxSizing: "border-box", outline: "none", transition: "border 0.2s",
+            }}
+          />
+          <button
+            onClick={() => setShowPass(p => !p)}
+            style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: t.textMuted, fontSize: 15, padding: 0 }}
+          >
+            <i className={showPass ? "fa-solid fa-eye-slash" : "fa-solid fa-eye"} />
+          </button>
+        </div>
+        {error && (
+          <div style={{ color: "#FF6B6B", fontSize: 12, fontWeight: "600", marginBottom: 12, textAlign: "center" }}>
+            <i className="fa-solid fa-circle-exclamation" style={{ marginRight: 6 }} />Incorrect passphrase. Try again.
+          </div>
+        )}
         <button
           onClick={handleSubmit}
           style={{
@@ -206,7 +207,6 @@ function Toast({ message, visible }) {
     </div>
   );
 }
-
 
 // ─── Google Sheets Sync ───────────────────────────────────────────────
 async function syncToSheets(log, profile) {
@@ -292,19 +292,16 @@ LOGENTRY:{"type":"feed|sleep|diaper|cry|tummytime","label":"Feed|Sleep|Diaper|Cr
     );
     const data = await res.json();
     console.log("Gemini raw response:", JSON.stringify(data));
-const raw  = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    const raw  = data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!raw) return { reply: "I didn't get a response — please try again.", parsed: null };
 
-    // Split on LOGENTRY: only — safer than ENTRY: which clashes with normal text
     const splitIndex = raw.lastIndexOf("LOGENTRY:");
-    if (splitIndex === -1) {
-      return { reply: raw.trim(), parsed: null };
-    }
+    if (splitIndex === -1) return { reply: raw.trim(), parsed: null };
 
-    const reply     = raw.slice(0, splitIndex).trim();
-    const jsonPart  = raw.slice(splitIndex + 9).trim();
-    let parsed      = null;
+    const reply    = raw.slice(0, splitIndex).trim();
+    const jsonPart = raw.slice(splitIndex + 9).trim();
+    let parsed     = null;
     try { parsed = JSON.parse(jsonPart); } catch { parsed = null; }
 
     return { reply: reply || raw.trim(), parsed };
@@ -313,7 +310,6 @@ const raw  = data?.candidates?.[0]?.content?.parts?.[0]?.text;
     return { reply: "Couldn't reach AI — check your connection.", parsed: null };
   }
 }
-
 
 // ─── Diaper Modal ─────────────────────────────────────────────────────
 function DiaperModal({ t, onSave, onClose }) {
@@ -360,6 +356,8 @@ function DiaperModal({ t, onSave, onClose }) {
 }
 
 // ─── Timer Modal ──────────────────────────────────────────────────────
+// ✅ FIX 5: Added Feeding Type (Nursing/Formula) per feed
+// ✅ FIX 6: Renamed "Side" → "Nursing Side", shown only for Nursing
 function TimerModal({ ev, t, onSave, onClose }) {
   const [mode,      setMode]      = useState("now");
   const [running,   setRunning]   = useState(false);
@@ -367,6 +365,7 @@ function TimerModal({ ev, t, onSave, onClose }) {
   const [elapsed,   setElapsed]   = useState(0);
   const [pastStart, setPastStart] = useState("");
   const [pastEnd,   setPastEnd]   = useState("");
+  const [feedType,  setFeedType]  = useState(null);
   const [side,      setSide]      = useState(null);
   const [note,      setNote]      = useState("");
   const intervalRef = useRef(null);
@@ -385,7 +384,7 @@ function TimerModal({ ev, t, onSave, onClose }) {
     if (mode === "timer")                 { start = startTime; duration = elapsed; }
     else if (mode === "past" && pastStart) { start = new Date(pastStart).getTime(); duration = pastEnd ? Math.floor((new Date(pastEnd).getTime() - start) / 1000) : null; }
     else                                  { start = Date.now(); duration = null; }
-    onSave({ startTime: start, duration, side, note });
+    onSave({ startTime: start, duration, feedingType: feedType, side, note });
   }
 
   const isFeed = ev.type === "feed";
@@ -425,12 +424,28 @@ function TimerModal({ ev, t, onSave, onClose }) {
         )}
         {isFeed && (
           <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 12, color: t.textMuted, fontWeight: "600", marginBottom: 10, textTransform: "uppercase", letterSpacing: 1 }}>Side (breastfeeding)</div>
-            <div style={{ display: "flex", gap: 8 }}>
-              {["Left","Right","Both","Bottle"].map(s => (
-                <button key={s} onClick={() => setSide(s)} style={{ flex: 1, padding: "10px 4px", borderRadius: 12, border: `2px solid ${side === s ? ev.streak : t.border}`, background: side === s ? `${ev.streak}18` : t.bg3, color: side === s ? ev.streak : t.textMuted, fontWeight: "600", fontSize: 12, cursor: "pointer", fontFamily: "'Poppins', sans-serif" }}>{s}</button>
+            <div style={{ fontSize: 12, color: t.textMuted, fontWeight: "600", marginBottom: 10, textTransform: "uppercase", letterSpacing: 1 }}>Feeding Type</div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+              {["Nursing", "Formula"].map(f => (
+                <button key={f} onClick={() => { setFeedType(f); if (f === "Formula") setSide(null); }}
+                  style={{ flex: 1, padding: "10px 4px", borderRadius: 12, border: `2px solid ${feedType === f ? ev.streak : t.border}`, background: feedType === f ? `${ev.streak}18` : t.bg3, color: feedType === f ? ev.streak : t.textMuted, fontWeight: "600", fontSize: 13, cursor: "pointer", fontFamily: "'Poppins', sans-serif" }}>
+                  {f}
+                </button>
               ))}
             </div>
+            {feedType === "Nursing" && (
+              <>
+                <div style={{ fontSize: 12, color: t.textMuted, fontWeight: "600", marginBottom: 10, textTransform: "uppercase", letterSpacing: 1 }}>Nursing Side</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {["Left", "Right", "Both"].map(s => (
+                    <button key={s} onClick={() => setSide(s)}
+                      style={{ flex: 1, padding: "10px 4px", borderRadius: 12, border: `2px solid ${side === s ? ev.streak : t.border}`, background: side === s ? `${ev.streak}18` : t.bg3, color: side === s ? ev.streak : t.textMuted, fontWeight: "600", fontSize: 12, cursor: "pointer", fontFamily: "'Poppins', sans-serif" }}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         )}
         <div style={{ fontSize: 12, color: t.textMuted, fontWeight: "600", marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>Note (optional)</div>
@@ -478,13 +493,13 @@ function EntryPreview({ entry, t, onConfirm, onDiscard }) {
 
 // ─── Home Screen ──────────────────────────────────────────────────────
 function HomeScreen({ log, prediction, aiLoading, t, setActiveModal, onSaveEntry, profile }) {
-  const [aiTab,       setAiTab]       = useState("prediction");
-  const [chatHistory, setChatHistory] = useState(() => loadChat());
-  const [inputText,   setInputText]   = useState("");
-  const [chatLoading, setChatLoading] = useState(false);
+  const [aiTab,        setAiTab]        = useState("prediction");
+  const [chatHistory,  setChatHistory]  = useState(() => loadChat());
+  const [inputText,    setInputText]    = useState("");
+  const [chatLoading,  setChatLoading]  = useState(false);
   const [pendingEntry, setPendingEntry] = useState(null);
-  const [listening,   setListening]   = useState(false);
-  const chatEndRef  = useRef(null);
+  const [listening,    setListening]    = useState(false);
+  const chatEndRef     = useRef(null);
   const recognitionRef = useRef(null);
 
   useEffect(() => {
@@ -507,7 +522,7 @@ function HomeScreen({ log, prediction, aiLoading, t, setActiveModal, onSaveEntry
   async function handleSend() {
     const text = inputText.trim();
     if (!text || chatLoading) return;
-    const userMsg = { role: "user", text, time: Date.now() };
+    const userMsg    = { role: "user", text, time: Date.now() };
     const newHistory = [...chatHistory, userMsg];
     setChatHistory(newHistory);
     setInputText("");
@@ -533,10 +548,8 @@ function HomeScreen({ log, prediction, aiLoading, t, setActiveModal, onSaveEntry
 
   return (
     <div style={{ padding: "16px 16px 100px" }}>
-
       {/* AI Panel */}
       <div style={{ background: t.card, borderRadius: 20, border: `1px solid ${t.border}`, marginBottom: 20, overflow: "hidden", boxShadow: `0 4px 20px ${t.shadow}` }}>
-
         {/* Tabs */}
         <div style={{ display: "flex", borderBottom: `1px solid ${t.border}` }}>
           {[{ id: "prediction", icon: "fa-solid fa-wand-magic-sparkles", label: "Prediction" }, { id: "askai", icon: "fa-solid fa-comments", label: "Ask AI" }].map(tab => (
@@ -545,7 +558,6 @@ function HomeScreen({ log, prediction, aiLoading, t, setActiveModal, onSaveEntry
             </button>
           ))}
         </div>
-
         {/* Prediction Tab */}
         {aiTab === "prediction" && (
           <div style={{ padding: "18px 20px" }}>
@@ -556,11 +568,9 @@ function HomeScreen({ log, prediction, aiLoading, t, setActiveModal, onSaveEntry
             <div style={{ fontSize: 15, lineHeight: 1.7, color: t.text, opacity: aiLoading ? 0.4 : 1, transition: "opacity 0.3s" }}>{prediction}</div>
           </div>
         )}
-
         {/* Ask AI Tab */}
         {aiTab === "askai" && (
           <div style={{ display: "flex", flexDirection: "column", height: 320 }}>
-
             {/* Messages */}
             <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
               {chatHistory.length === 0 && (
@@ -588,7 +598,6 @@ function HomeScreen({ log, prediction, aiLoading, t, setActiveModal, onSaveEntry
               )}
               <div ref={chatEndRef} />
             </div>
-
             {/* Input */}
             <div style={{ padding: "10px 12px", borderTop: `1px solid ${t.border}`, display: "flex", gap: 8, alignItems: "center" }}>
               <button onClick={startVoice} style={{ background: listening ? t.accent : t.bg3, border: `1px solid ${listening ? t.accent : t.border}`, borderRadius: 10, width: 38, height: 38, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all 0.2s" }}>
@@ -637,18 +646,19 @@ function HomeScreen({ log, prediction, aiLoading, t, setActiveModal, onSaveEntry
   );
 }
 
-
 // ─── Edit Entry Modal ─────────────────────────────────────────────────
+// ✅ FIX 6: "Side" → "Nursing Side" in edit modal
 function EditEntryModal({ entry, t, onSave, onDelete, onClose }) {
   const ev = EVENT_TYPES.find(e => e.type === entry.type);
   const toLocalDT = (ts) => {
     if (!ts) return "";
     const d = new Date(ts);
-    const pad = n => String(n).padStart(2,"0");
+    const pad = n => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
   const [startVal,    setStartVal]    = useState(toLocalDT(entry.startTime));
-  const [durationVal, setDurationVal] = useState(entry.duration ? String(Math.floor(entry.duration/60)) : "");
+  const [durationVal, setDurationVal] = useState(entry.duration ? String(Math.floor(entry.duration / 60)) : "");
+  const [feedingType, setFeedingType] = useState(entry.feedingType || null);
   const [diaperType,  setDiaperType]  = useState(entry.diaperType || null);
   const [side,        setSide]        = useState(entry.side || null);
   const [note,        setNote]        = useState(entry.note || "");
@@ -656,36 +666,40 @@ function EditEntryModal({ entry, t, onSave, onDelete, onClose }) {
   function handleSave() {
     const updated = {
       ...entry,
-      startTime:  startVal ? new Date(startVal).getTime() : entry.startTime,
-      duration:   durationVal ? parseInt(durationVal) * 60 : null,
-      diaperType: diaperType,
-      side:       side,
-      note:       note,
+      startTime:   startVal ? new Date(startVal).getTime() : entry.startTime,
+      duration:    durationVal ? parseInt(durationVal) * 60 : null,
+      feedingType: feedingType,
+      diaperType:  diaperType,
+      side:        side,
+      note:        note,
     };
     onSave(updated);
   }
 
   return (
-    <div style={{ position:"fixed", inset:0, background:"#00000088", zIndex:200, display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
-      <div style={{ background:t.bg2, borderRadius:"24px 24px 0 0", padding:"24px 20px 40px", width:"100%", maxWidth:420, maxHeight:"85vh", overflowY:"auto" }}>
-        <div style={{ fontSize:17, fontWeight:"700", marginBottom:20, color:t.text, display:"flex", alignItems:"center", gap:10 }}>
-          <i className={ev?.icon} style={{ color:ev?.streak }} />Edit {entry.label}
+    <div style={{ position: "fixed", inset: 0, background: "#00000088", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      <div style={{ background: t.bg2, borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", width: "100%", maxWidth: 420, maxHeight: "85vh", overflowY: "auto" }}>
+        <div style={{ fontSize: 17, fontWeight: "700", marginBottom: 20, color: t.text, display: "flex", alignItems: "center", gap: 10 }}>
+          <i className={ev?.icon} style={{ color: ev?.streak }} />Edit {entry.label}
         </div>
 
-        <div style={{ fontSize:12, color:t.textMuted, fontWeight:"600", marginBottom:8, textTransform:"uppercase", letterSpacing:1 }}>Date & Time</div>
+        <div style={{ fontSize: 12, color: t.textMuted, fontWeight: "600", marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>Date & Time</div>
         <input type="datetime-local" value={startVal} onChange={e => setStartVal(e.target.value)}
-          style={{ width:"100%", background:t.bg3, border:`1px solid ${t.border}`, borderRadius:12, padding:"12px 14px", color:t.text, fontSize:14, fontFamily:"'Poppins', sans-serif", boxSizing:"border-box", marginBottom:16 }} />
+          style={{ width: "100%", background: t.bg3, border: `1px solid ${t.border}`, borderRadius: 12, padding: "12px 14px", color: t.text, fontSize: 14, fontFamily: "'Poppins', sans-serif", boxSizing: "border-box", marginBottom: 16 }} />
 
-        <div style={{ fontSize:12, color:t.textMuted, fontWeight:"600", marginBottom:8, textTransform:"uppercase", letterSpacing:1 }}>Duration (minutes)</div>
+        <div style={{ fontSize: 12, color: t.textMuted, fontWeight: "600", marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>Duration (minutes)</div>
         <input type="number" value={durationVal} onChange={e => setDurationVal(e.target.value)} placeholder="e.g. 15"
-          style={{ width:"100%", background:t.bg3, border:`1px solid ${t.border}`, borderRadius:12, padding:"12px 14px", color:t.text, fontSize:14, fontFamily:"'Poppins', sans-serif", boxSizing:"border-box", marginBottom:16 }} />
+          style={{ width: "100%", background: t.bg3, border: `1px solid ${t.border}`, borderRadius: 12, padding: "12px 14px", color: t.text, fontSize: 14, fontFamily: "'Poppins', sans-serif", boxSizing: "border-box", marginBottom: 16 }} />
 
         {entry.type === "diaper" && (
           <>
-            <div style={{ fontSize:12, color:t.textMuted, fontWeight:"600", marginBottom:8, textTransform:"uppercase", letterSpacing:1 }}>Diaper Type</div>
-            <div style={{ display:"flex", gap:8, marginBottom:16 }}>
-              {["Wet","Dirty","Both"].map(tp => (
-                <button key={tp} onClick={() => setDiaperType(tp)} style={{ flex:1, padding:"10px", borderRadius:12, border:`2px solid ${diaperType===tp ? ev?.streak : t.border}`, background:diaperType===tp ? `${ev?.streak}18` : t.bg3, color:diaperType===tp ? ev?.streak : t.textMuted, fontWeight:"600", fontSize:13, cursor:"pointer", fontFamily:"'Poppins', sans-serif" }}>{tp}</button>
+            <div style={{ fontSize: 12, color: t.textMuted, fontWeight: "600", marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>Diaper Type</div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+              {["Wet", "Dirty", "Both"].map(tp => (
+                <button key={tp} onClick={() => setDiaperType(tp)}
+                  style={{ flex: 1, padding: "10px", borderRadius: 12, border: `2px solid ${diaperType === tp ? ev?.streak : t.border}`, background: diaperType === tp ? `${ev?.streak}18` : t.bg3, color: diaperType === tp ? ev?.streak : t.textMuted, fontWeight: "600", fontSize: 13, cursor: "pointer", fontFamily: "'Poppins', sans-serif" }}>
+                  {tp}
+                </button>
               ))}
             </div>
           </>
@@ -693,25 +707,41 @@ function EditEntryModal({ entry, t, onSave, onDelete, onClose }) {
 
         {entry.type === "feed" && (
           <>
-            <div style={{ fontSize:12, color:t.textMuted, fontWeight:"600", marginBottom:8, textTransform:"uppercase", letterSpacing:1 }}>Side</div>
-            <div style={{ display:"flex", gap:8, marginBottom:16 }}>
-              {["Left","Right","Both","Bottle"].map(s => (
-                <button key={s} onClick={() => setSide(s)} style={{ flex:1, padding:"10px 4px", borderRadius:12, border:`2px solid ${side===s ? ev?.streak : t.border}`, background:side===s ? `${ev?.streak}18` : t.bg3, color:side===s ? ev?.streak : t.textMuted, fontWeight:"600", fontSize:12, cursor:"pointer", fontFamily:"'Poppins', sans-serif" }}>{s}</button>
+            <div style={{ fontSize: 12, color: t.textMuted, fontWeight: "600", marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>Feeding Type</div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+              {["Nursing", "Formula"].map(f => (
+                <button key={f} onClick={() => { setFeedingType(f); if (f === "Formula") setSide(null); }}
+                  style={{ flex: 1, padding: "10px 4px", borderRadius: 12, border: `2px solid ${feedingType === f ? ev?.streak : t.border}`, background: feedingType === f ? `${ev?.streak}18` : t.bg3, color: feedingType === f ? ev?.streak : t.textMuted, fontWeight: "600", fontSize: 13, cursor: "pointer", fontFamily: "'Poppins', sans-serif" }}>
+                  {f}
+                </button>
               ))}
             </div>
+            {feedingType === "Nursing" && (
+              <>
+                <div style={{ fontSize: 12, color: t.textMuted, fontWeight: "600", marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>Nursing Side</div>
+                <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+                  {["Left", "Right", "Both"].map(s => (
+                    <button key={s} onClick={() => setSide(s)}
+                      style={{ flex: 1, padding: "10px 4px", borderRadius: 12, border: `2px solid ${side === s ? ev?.streak : t.border}`, background: side === s ? `${ev?.streak}18` : t.bg3, color: side === s ? ev?.streak : t.textMuted, fontWeight: "600", fontSize: 12, cursor: "pointer", fontFamily: "'Poppins', sans-serif" }}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </>
         )}
 
-        <div style={{ fontSize:12, color:t.textMuted, fontWeight:"600", marginBottom:8, textTransform:"uppercase", letterSpacing:1 }}>Note</div>
+        <div style={{ fontSize: 12, color: t.textMuted, fontWeight: "600", marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>Note</div>
         <input value={note} onChange={e => setNote(e.target.value)} placeholder="Any observations..."
-          style={{ width:"100%", background:t.bg3, border:`1px solid ${t.border}`, borderRadius:12, padding:"12px 14px", color:t.text, fontSize:14, fontFamily:"'Poppins', sans-serif", boxSizing:"border-box", marginBottom:20 }} />
+          style={{ width: "100%", background: t.bg3, border: `1px solid ${t.border}`, borderRadius: 12, padding: "12px 14px", color: t.text, fontSize: 14, fontFamily: "'Poppins', sans-serif", boxSizing: "border-box", marginBottom: 20 }} />
 
-        <div style={{ display:"flex", gap:10 }}>
-          <button onClick={() => onDelete(entry.id)} style={{ flex:1, padding:"14px", borderRadius:14, border:`1px solid #FF6B6B`, background:"#FF6B6B18", color:"#FF6B6B", fontWeight:"700", fontSize:14, cursor:"pointer", fontFamily:"'Poppins', sans-serif" }}>
-            <i className="fa-solid fa-trash" style={{ marginRight:6 }} />Delete
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={() => onDelete(entry.id)} style={{ flex: 1, padding: "14px", borderRadius: 14, border: "1px solid #FF6B6B", background: "#FF6B6B18", color: "#FF6B6B", fontWeight: "700", fontSize: 14, cursor: "pointer", fontFamily: "'Poppins', sans-serif" }}>
+            <i className="fa-solid fa-trash" style={{ marginRight: 6 }} />Delete
           </button>
-          <button onClick={onClose} style={{ flex:1, padding:"14px", borderRadius:14, border:`1px solid ${t.border}`, background:t.bg3, color:t.textMuted, fontWeight:"600", fontSize:14, cursor:"pointer", fontFamily:"'Poppins', sans-serif" }}>Cancel</button>
-          <button onClick={handleSave} style={{ flex:2, padding:"14px", borderRadius:14, border:"none", background:ev?.streak || t.accent, color:"#1a1a2e", fontWeight:"700", fontSize:14, cursor:"pointer", fontFamily:"'Poppins', sans-serif" }}>Save</button>
+          <button onClick={onClose} style={{ flex: 1, padding: "14px", borderRadius: 14, border: `1px solid ${t.border}`, background: t.bg3, color: t.textMuted, fontWeight: "600", fontSize: 14, cursor: "pointer", fontFamily: "'Poppins', sans-serif" }}>Cancel</button>
+          <button onClick={handleSave} style={{ flex: 2, padding: "14px", borderRadius: 14, border: "none", background: ev?.streak || t.accent, color: "#1a1a2e", fontWeight: "700", fontSize: 14, cursor: "pointer", fontFamily: "'Poppins', sans-serif" }}>Save</button>
         </div>
       </div>
     </div>
@@ -726,8 +756,8 @@ function StatsScreen({ log, setLog, t, showToast }) {
   const [editEntry,  setEditEntry]  = useState(null);
   const fileInputRef = useRef(null);
 
-  const now      = Date.now();
-  const today    = new Date(); today.setHours(0,0,0,0);
+  const now   = Date.now();
+  const today = new Date(); today.setHours(0, 0, 0, 0);
   const filtered = log.filter(e => {
     if (filter === "today")  return e.startTime >= today.getTime();
     if (filter === "7days")  return e.startTime >= now - 7  * 86400000;
@@ -740,7 +770,7 @@ function StatsScreen({ log, setLog, t, showToast }) {
     return true;
   });
 
-  const counts   = {}, durations = {};
+  const counts = {}, durations = {};
   EVENT_TYPES.forEach(e => { counts[e.type] = 0; durations[e.type] = 0; });
   filtered.forEach(e => { if (counts[e.type] !== undefined) { counts[e.type]++; if (e.duration) durations[e.type] += e.duration; } });
 
@@ -750,7 +780,7 @@ function StatsScreen({ log, setLog, t, showToast }) {
     reader.onload = ev => {
       const parsed = parseCSV(ev.target.result);
       const action = window.confirm("Merge with existing data?\nOK = Merge   Cancel = Replace");
-      const newLog = action ? [...log, ...parsed].sort((a,b) => b.startTime - a.startTime) : parsed;
+      const newLog = action ? [...log, ...parsed].sort((a, b) => b.startTime - a.startTime) : parsed;
       setLog(newLog);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(newLog));
       showToast("Data imported successfully!");
@@ -785,9 +815,10 @@ function StatsScreen({ log, setLog, t, showToast }) {
       <div style={{ fontSize: 18, fontWeight: "700", marginBottom: 16 }}>Stats</div>
 
       {/* Filter Bar */}
-      <div style={{ display: "flex", gap: 8, overflowX: "auto", marginBottom: 20, paddingBottom: 4 }}>
-        {filterBtn("today","Today")}{filterBtn("7days","7 Days")}{filterBtn("30days","30 Days")}{filterBtn("custom","Custom")}
+      <div style={{ display: "flex", gap: 8, overflowX: "auto", marginBottom: 16, paddingBottom: 4 }}>
+        {filterBtn("today","Today")}{filterBtn("7days","7 Days")}{filterBtn("30days","30 Days")}{filterBtn("all","All Time")}{filterBtn("custom","Custom")}
       </div>
+
       {filter === "custom" && (
         <div style={{ display: "flex", gap: 10, marginBottom: 16, alignItems: "center" }}>
           <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
@@ -830,15 +861,16 @@ function StatsScreen({ log, setLog, t, showToast }) {
           {filtered.map((item, i) => {
             const ev = EVENT_TYPES.find(e => e.type === item.type);
             return (
-              <div key={item.id} onClick={() => setEditEntry(item)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: i < filtered.length - 1 ? `1px solid ${t.border}` : "none", cursor: "pointer" }}>
+              <div key={item.id || i} onClick={() => setEditEntry(item)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: i < filtered.length - 1 ? `1px solid ${t.border}` : "none", cursor: "pointer" }}>
                 <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <i className={ev?.icon} style={{ fontSize: 16, color: ev?.streak, width: 20 }} />
                   <span style={{ fontSize: 14, fontWeight: "600", color: t.text }}>
                     {item.label}
-                    {item.diaperType && <span style={{ fontSize: 12, color: t.textMuted }}> · {item.diaperType}</span>}
-                    {item.side       && <span style={{ fontSize: 12, color: t.textMuted }}> · {item.side}</span>}
-                    {item.duration   && <span style={{ fontSize: 12, color: t.accent }}> · {formatDuration(item.duration)}</span>}
-                    {item.note       && <span style={{ fontSize: 12, color: t.textMuted }}> · {item.note}</span>}
+                    {item.feedingType && <span style={{ fontSize: 12, color: t.textMuted }}> · {item.feedingType}</span>}
+                    {item.diaperType  && <span style={{ fontSize: 12, color: t.textMuted }}> · {item.diaperType}</span>}
+                    {item.side        && <span style={{ fontSize: 12, color: t.textMuted }}> · {item.side}</span>}
+                    {item.duration    && <span style={{ fontSize: 12, color: t.accent }}> · {formatDuration(item.duration)}</span>}
+                    {item.note        && <span style={{ fontSize: 12, color: t.textMuted }}> · {item.note}</span>}
                   </span>
                 </span>
                 <span style={{ fontSize: 12, color: t.textMuted, flexShrink: 0, marginLeft: 8 }}>{timeSince(item.startTime)}</span>
@@ -847,21 +879,17 @@ function StatsScreen({ log, setLog, t, showToast }) {
           })}
         </div>
       )}
+
       {editEntry && (
-        <EditEntryModal
-          entry={editEntry}
-          t={t}
-          onSave={handleSaveEdit}
-          onDelete={handleDeleteEntry}
-          onClose={() => setEditEntry(null)}
-        />
+        <EditEntryModal entry={editEntry} t={t} onSave={handleSaveEdit} onDelete={handleDeleteEntry} onClose={() => setEditEntry(null)} />
       )}
     </div>
   );
 }
 
 // ─── Settings Screen ──────────────────────────────────────────────────
-function SettingsScreen({ profile, onSave, darkMode, onToggleTheme, t, showToast }) {
+// ✅ FIX 4: Added sync status panel
+function SettingsScreen({ profile, onSave, darkMode, onToggleTheme, t, showToast, syncStatus, lastSynced, isOnline, onManualSync }) {
   const [form, setForm] = useState({ nickname: "", dob: "", gender: "", feedingType: "", birthWeight: "", city: "", notes: "", ageFormat: "Weeks", ...profile });
   function set(k, v) { setForm(p => ({ ...p, [k]: v })); }
 
@@ -882,10 +910,15 @@ function SettingsScreen({ profile, onSave, darkMode, onToggleTheme, t, showToast
     </label>
   );
 
+  const syncColor = syncStatus === "synced" ? "#6BCB77" : syncStatus === "syncing" ? t.accent : syncStatus === "error" ? "#FF6B6B" : t.textMuted;
+  const syncLabel = syncStatus === "synced" ? "Synced" : syncStatus === "syncing" ? "Syncing..." : syncStatus === "error" ? "Sync failed" : "Not synced";
+  const syncIcon  = syncStatus === "synced" ? "fa-solid fa-circle-check" : syncStatus === "syncing" ? "fa-solid fa-spinner fa-spin" : syncStatus === "error" ? "fa-solid fa-triangle-exclamation" : "fa-solid fa-cloud-arrow-up";
+
   return (
     <div style={{ padding: "24px 16px 100px" }}>
       <div style={{ fontSize: 18, fontWeight: "700", marginBottom: 4 }}>Baby Profile</div>
       <div style={{ fontSize: 13, color: t.textSub, marginBottom: 20, fontWeight: "600" }}>Helps BabySense AI make smarter predictions</div>
+
       <div style={{ background: t.card, borderRadius: 20, padding: "20px 18px", border: `1px solid ${t.border}`, display: "flex", flexDirection: "column", gap: 22 }}>
 
         <div>{fieldLabel("fa-solid fa-tag","Baby Nickname")}<input style={inputStyle} placeholder="e.g. Arya, Lil One..." value={form.nickname} onChange={e => set("nickname", e.target.value)} /></div>
@@ -931,13 +964,38 @@ function SettingsScreen({ profile, onSave, darkMode, onToggleTheme, t, showToast
         <button onClick={handleSave} style={{ width: "100%", border: "none", borderRadius: 16, padding: "16px", background: `linear-gradient(135deg, ${previewAccent}, #a78bfa)`, color: "#fff", fontSize: 16, fontWeight: "700", cursor: "pointer", fontFamily: "'Poppins', sans-serif" }}>
           <i className="fa-solid fa-circle-check" style={{ marginRight: 8 }} />Save Profile
         </button>
-        {SHEETS_URL && (
-          <button onClick={() => syncToSheets(JSON.parse(localStorage.getItem("babysense_log")||"[]"), form).then(() => showToast("Synced to Google Sheets!"))}
-            style={{ width: "100%", padding: "14px", borderRadius: 16, border: `1px solid #34A853`, background: "#34A85318", color: "#34A853", fontWeight: "700", fontSize: 15, cursor: "pointer", fontFamily: "'Poppins', sans-serif", marginTop: 10, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-            <i className="fa-brands fa-google" />Sync to Google Sheets Now
-          </button>
-        )}
       </div>
+
+      {/* ✅ FIX 4: Sync Status Panel */}
+      {SHEETS_URL && (
+        <div style={{ background: t.card, borderRadius: 20, padding: "18px", border: `1px solid ${t.border}`, marginTop: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: "700", color: t.text, marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
+            <i className="fa-brands fa-google" style={{ color: "#34A853" }} />Google Sheets Sync
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <i className={syncIcon} style={{ color: syncColor, fontSize: 15 }} />
+              <span style={{ fontSize: 13, color: syncColor, fontWeight: "600" }}>{syncLabel}</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: isOnline ? "#6BCB77" : "#FF6B6B" }} />
+              <span style={{ fontSize: 12, color: t.textMuted }}>{isOnline ? "Online" : "Offline"}</span>
+            </div>
+          </div>
+          {lastSynced && (
+            <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 12 }}>
+              Last synced: {new Date(lastSynced).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true })} · {new Date(lastSynced).toLocaleDateString("en-IN")}
+            </div>
+          )}
+          <button
+            onClick={onManualSync}
+            disabled={syncStatus === "syncing" || !isOnline}
+            style={{ width: "100%", padding: "12px", borderRadius: 14, border: `1px solid #34A853`, background: syncStatus === "syncing" || !isOnline ? t.bg3 : "#34A85318", color: syncStatus === "syncing" || !isOnline ? t.textMuted : "#34A853", fontWeight: "700", fontSize: 14, cursor: syncStatus === "syncing" || !isOnline ? "default" : "pointer", fontFamily: "'Poppins', sans-serif", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 0.2s" }}>
+            <i className={syncStatus === "syncing" ? "fa-solid fa-spinner fa-spin" : "fa-solid fa-rotate"} />
+            {syncStatus === "syncing" ? "Syncing..." : "Sync Now"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -963,33 +1021,65 @@ function TabBar({ tab, setTab, t }) {
 }
 
 // ─── Root ─────────────────────────────────────────────────────────────
+// ✅ FIX 2: Auth gate moved AFTER all hooks (no hooks-order violation)
 export default function App() {
-  const [authed, setAuthed] = useState(() => sessionStorage.getItem("bs_auth") === "1");
-  const [log, setLog]               = useState(() => loadLog());
-  const [profile, setProfile]       = useState(() => loadProfile());
-  const [tab, setTab]               = useState("home");
+  const [authed,      setAuthed]      = useState(() => sessionStorage.getItem("bs_auth") === "1");
+  const [log,         setLog]         = useState(() => loadLog());
+  const [profile,     setProfile]     = useState(() => loadProfile());
+  const [tab,         setTab]         = useState("home");
   const [activeModal, setActiveModal] = useState(null);
-  const [prediction, setPrediction] = useState("Log a few events and I'll start predicting patterns.");
-  const [aiLoading, setAiLoading]   = useState(false);
-  const [darkMode, setDarkMode]     = useState(() => { const p = loadProfile(); return p.theme === "light" ? false : p.theme === "dark" ? true : isNightTime(); });
-  const [toast, setToast]           = useState({ visible: false, message: "" });
+  const [prediction,  setPrediction]  = useState("Log a few events and I'll start predicting patterns.");
+  const [aiLoading,   setAiLoading]   = useState(false);
+  const [darkMode,    setDarkMode]    = useState(() => { const p = loadProfile(); return p.theme === "light" ? false : p.theme === "dark" ? true : isNightTime(); });
+  const [toast,       setToast]       = useState({ visible: false, message: "" });
+  const [syncStatus,  setSyncStatus]  = useState("idle");
+  const [lastSynced,  setLastSynced]  = useState(null);
+  const [isOnline,    setIsOnline]    = useState(navigator.onLine);
   const aiTimer = useRef(null);
   const t = getTheme(darkMode, profile.gender);
 
-  if (!authed) return <AuthScreen t={t} onUnlock={() => setAuthed(true)} />;
-
+  // ✅ All useEffects BEFORE auth gate
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(log));
-    syncToSheets(log, profile);
+    if (isOnline) handleSync(log);
   }, [log]);
+
   useEffect(() => {
-    const interval = setInterval(() => { const p = loadProfile(); if (!p.theme) setDarkMode(isNightTime()); }, 60000);
+    const onOnline  = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener("online",  onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => { window.removeEventListener("online", onOnline); window.removeEventListener("offline", onOffline); };
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const p = loadProfile();
+      if (!p.theme) setDarkMode(isNightTime());
+    }, 60000);
     return () => clearInterval(interval);
   }, []);
 
   function showToast(message) {
     setToast({ visible: true, message });
-    setTimeout(() => setToast({ visible: false, message: "" }), 2500);
+    setTimeout(() => setToast({ visible: false, message }), 2500);
+  }
+
+  async function handleSync(currentLog) {
+    if (!SHEETS_URL || !isOnline) return;
+    setSyncStatus("syncing");
+    try {
+      await syncToSheets(currentLog, profile);
+      setSyncStatus("synced");
+      setLastSynced(Date.now());
+    } catch {
+      setSyncStatus("error");
+    }
+  }
+
+  async function onManualSync() {
+    await handleSync(log);
+    showToast("Synced to Google Sheets!");
   }
 
   const refreshPrediction = useCallback(async (currentLog) => {
@@ -999,8 +1089,8 @@ export default function App() {
   }, [profile]);
 
   function handleSaveEntry(eventType, data) {
-    const ev     = EVENT_TYPES.find(e => e.type === eventType);
-    const entry  = { ...data, type: eventType, label: ev.label, icon: ev.icon, streak: ev.streak, id: Date.now() };
+    const ev    = EVENT_TYPES.find(e => e.type === eventType);
+    const entry = { ...data, type: eventType, label: ev.label, icon: ev.icon, streak: ev.streak, id: Date.now() };
     const newLog = [entry, ...log.slice(0, 49)];
     setLog(newLog);
     setActiveModal(null);
@@ -1011,36 +1101,40 @@ export default function App() {
 
   function handleToggleTheme(isDark) {
     setDarkMode(isDark);
-    setProfile(prev => { const u = { ...prev, theme: isDark ? "dark" : "light" }; localStorage.setItem(PROFILE_KEY, JSON.stringify(u)); return u; });
+    setProfile(prev => {
+      const u = { ...prev, theme: isDark ? "dark" : "light" };
+      localStorage.setItem(PROFILE_KEY, JSON.stringify(u));
+      return u;
+    });
   }
 
   const ageText  = getAge(profile.dob, profile.ageFormat || "Weeks");
   const activeEv = EVENT_TYPES.find(e => e.type === activeModal);
 
+  // ✅ FIX 2: Auth gate is here — AFTER all hooks
   if (!authed) return <AuthScreen t={t} onUnlock={() => setAuthed(true)} />;
 
   return (
     <div style={{ minHeight: "100vh", background: t.bg, color: t.text, fontFamily: "'Poppins', sans-serif", maxWidth: 420, margin: "0 auto" }}>
-
       <div style={{ padding: "20px 16px 12px", borderBottom: `1px solid ${t.border}`, background: t.bg, position: "sticky", top: 0, zIndex: 50 }}>
         <div style={{ fontSize: 20, fontWeight: "700", letterSpacing: "-0.3px" }}>BabySense AI</div>
         <div style={{ fontSize: 13, color: t.textSub, fontWeight: "600", marginTop: 2 }}>
-          {profile.nickname ? `${profile.nickname}'s Tracker${ageText ? ` (${ageText})` : ""}` : "Your smart newborn assistant"}
+          {profile.nickname ? `${profile.nickname}'s Tracker` : "Your smart newborn assistant"}{ageText ? ` · ${ageText}` : ""}
         </div>
       </div>
 
-      {tab === "home"     && <HomeScreen log={log} prediction={prediction} aiLoading={aiLoading} t={t} setActiveModal={setActiveModal} onSaveEntry={handleSaveEntry} profile={profile} />}
-      {tab === "stats"    && <StatsScreen log={log} setLog={setLog} t={t} showToast={showToast} />}
-      {tab === "settings" && <SettingsScreen profile={profile} onSave={p => { setProfile(p); setDarkMode(p.theme === "light" ? false : p.theme === "dark" ? true : isNightTime()); }} darkMode={darkMode} onToggleTheme={handleToggleTheme} t={t} showToast={showToast} />}
+      {tab === "home"     && <HomeScreen     log={log} prediction={prediction} aiLoading={aiLoading} t={t} setActiveModal={setActiveModal} onSaveEntry={handleSaveEntry} profile={profile} />}
+      {tab === "stats"    && <StatsScreen    log={log} setLog={setLog} t={t} showToast={showToast} />}
+      {tab === "settings" && <SettingsScreen profile={profile} onSave={p => { setProfile(p); setDarkMode(p.theme === "light" ? false : p.theme === "dark" ? true : isNightTime()); }} darkMode={darkMode} onToggleTheme={handleToggleTheme} t={t} showToast={showToast} syncStatus={syncStatus} lastSynced={lastSynced} isOnline={isOnline} onManualSync={onManualSync} />}
 
       <TabBar tab={tab} setTab={setTab} t={t} />
 
-      {activeModal && activeEv && (
-        activeEv.type === "diaper"
-          ? <DiaperModal t={t} onSave={d => handleSaveEntry(activeModal, d)} onClose={() => setActiveModal(null)} />
-          : <TimerModal  ev={activeEv} t={t} onSave={d => handleSaveEntry(activeModal, d)} onClose={() => setActiveModal(null)} />
+      {activeModal && activeEv && activeEv.type === "diaper" && (
+        <DiaperModal t={t} onSave={d => handleSaveEntry(activeModal, d)} onClose={() => setActiveModal(null)} />
       )}
-
+      {activeModal && activeEv && activeEv.type !== "diaper" && (
+        <TimerModal ev={activeEv} t={t} onSave={d => handleSaveEntry(activeModal, d)} onClose={() => setActiveModal(null)} />
+      )}
       <Toast message={toast.message} visible={toast.visible} />
     </div>
   );
